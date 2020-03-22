@@ -8,11 +8,14 @@ import sys
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+
 class FlattenLayer(torch.nn.Module):
     def __init__(self):
         super(FlattenLayer, self).__init__()
-    def forward(self, x): # x shape: (batch, *, *, ...)
+
+    def forward(self, x):  # x shape: (batch, *, *, ...)
         return x.view(x.shape[0], -1)
+
 
 class GlobalAvgPool2d(nn.Module):
     def __init__(self):
@@ -20,6 +23,7 @@ class GlobalAvgPool2d(nn.Module):
 
     def forward(self, x):
         return F.avg_pool2d(x, kernel_size=x.size()[2:])
+
 
 def load_data_fashion_mnist_toImageNet(batch_size, resize=None):
     trans = []
@@ -30,16 +34,21 @@ def load_data_fashion_mnist_toImageNet(batch_size, resize=None):
     trans.append(torchvision.transforms.ToTensor())
     transform = torchvision.transforms.Compose(trans)
 
-    mnist_train = torchvision.datasets.FashionMNIST(root='../Datasets/FashionMNIST', train=True, download=True, transform=transform)
-    mnist_test = torchvision.datasets.FashionMNIST(root='../Datasets/FashionMNIST', train=False, download=True, transform=transform)
+    mnist_train = torchvision.datasets.FashionMNIST(
+        root='../Datasets/FashionMNIST', train=True, download=True, transform=transform)
+    mnist_test = torchvision.datasets.FashionMNIST(
+        root='../Datasets/FashionMNIST', train=False, download=True, transform=transform)
 
     if sys.platform.startswith('win'):
         num_workers = 0
     else:
         num_workers = 4
-    train_iter = torch.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_iter = torch.utils.data.DataLoader(mnist_test, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    train_iter = torch.utils.data.DataLoader(
+        mnist_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    test_iter = torch.utils.data.DataLoader(
+        mnist_test, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     return train_iter, test_iter
+
 
 def evaluate_accuracy(data_iter, net, device=None):
     if device is None and isinstance(net, torch.nn.Module):
@@ -49,17 +58,20 @@ def evaluate_accuracy(data_iter, net, device=None):
     with torch.no_grad():
         for X, y in data_iter:
             if isinstance(net, torch.nn.Module):
-                net.eval() # 评估模式, 这会关闭dropout
-                acc_sum += (net(X.to(device)).argmax(dim=1) == y.to(device)).float().sum().cpu().item()
-                net.train() # 改回训练模式
-            else: # 自定义的模型, 3.13节之后不会用到, 不考虑GPU
-                if('is_training' in net.__code__.co_varnames): # 如果有is_training这个参数
+                net.eval()  # 评估模式, 这会关闭dropout
+                acc_sum += (net(X.to(device)).argmax(dim=1) ==
+                            y.to(device)).float().sum().cpu().item()
+                net.train()  # 改回训练模式
+            else:  # 自定义的模型, 3.13节之后不会用到, 不考虑GPU
+                if('is_training' in net.__code__.co_varnames):  # 如果有is_training这个参数
                     # 将is_training设置成False
-                    acc_sum += (net(X, is_training=False).argmax(dim=1) == y).float().sum().item() 
+                    acc_sum += (net(X, is_training=False).argmax(dim=1)
+                                == y).float().sum().item()
                 else:
-                    acc_sum += (net(X).argmax(dim=1) == y).float().sum().item() 
+                    acc_sum += (net(X).argmax(dim=1) == y).float().sum().item()
             n += y.shape[0]
     return acc_sum / n
+
 
 def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epochs):
     net = net.to(device)
@@ -83,9 +95,11 @@ def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epo
         print('epoch %d, loss %.4f, train acc %.3f, test acc %.3f, time %.1f sec'
               % (epoch + 1, train_l_sum / batch_count, train_acc_sum / n, test_acc, time.time() - start))
 
-#稠密连接网络与残差网络的区别在于跨层连接上用连结
+# 稠密连接网络与残差网络的区别在于跨层连接上用连结
 
-#结构上进行优化
+# 结构上进行优化
+
+
 def conv_block(in_channels, out_channels):
     blk = nn.Sequential(
         nn.BatchNorm2d(in_channels),
@@ -94,7 +108,9 @@ def conv_block(in_channels, out_channels):
     )
     return blk
 
-#定义稠密块
+# 定义稠密块
+
+
 class DenseBlock(nn.Module):
     def __init__(self, num_convs, in_channels, out_channels):
         super(DenseBlock, self).__init__()
@@ -103,7 +119,7 @@ class DenseBlock(nn.Module):
             in_c = in_channels + i * out_channels
             net.append(conv_block(in_c, out_channels))
         self.net = nn.ModuleList(net)
-        self.out_channels = in_channels + num_convs * out_channels #计算输出通道数
+        self.out_channels = in_channels + num_convs * out_channels  # 计算输出通道数
 
     def forward(self, X):
         for blk in self.net:
@@ -111,16 +127,19 @@ class DenseBlock(nn.Module):
             X = torch.cat((X, Y), dim=1)
         return X
 
+
 blk_1 = DenseBlock(2, 3, 10)
 X = torch.rand(4, 3, 8, 8)
 Y = blk_1(X)
-#通道数为3+2×10=23
-#print(Y.shape)
+# 通道数为3+2×10=23
+# print(Y.shape)
 '''
 torch.Size([4, 23, 8, 8])
 '''
 
-#每个稠密块带来通道数的增加，使用过渡层来控制模型复杂度，使用1×1卷积层来减少通道数，使用步幅为2的平均池化层减半高和宽
+# 每个稠密块带来通道数的增加，使用过渡层来控制模型复杂度，使用1×1卷积层来减少通道数，使用步幅为2的平均池化层减半高和宽
+
+
 def transition_block(in_channels, out_channels):
     blk = nn.Sequential(
         nn.BatchNorm2d(in_channels),
@@ -130,14 +149,15 @@ def transition_block(in_channels, out_channels):
     )
     return blk
 
+
 blk_2 = transition_block(23, 10)
 Z = blk_2(Y)
-#print(Z.shape)
+# print(Z.shape)
 '''
 torch.Size([4, 10, 4, 4])
 '''
 
-#构造DenseNet模型
+# 构造DenseNet模型
 net = nn.Sequential(
     nn.Conv2d(1, 64, kernel_size=7, stride=2, padding=3),
     nn.BatchNorm2d(64),
@@ -151,19 +171,21 @@ num_convs_in_dense_blocks = [4, 4, 4, 4]
 for i, num_convs in enumerate(num_convs_in_dense_blocks):
     DB = DenseBlock(num_convs, num_channels, growth_rate)
     net.add_module('DenseBlock_%d' % i, DB)
-    #上一个稠密块的输出通道数
+    # 上一个稠密块的输出通道数
     num_channels = DB.out_channels
-    #稠密块之间加入通道数减半的过渡层
+    # 稠密块之间加入通道数减半的过渡层
     if i != len(num_convs_in_dense_blocks) - 1:
-        net.add_module('transition_block_%d' % i, transition_block(num_channels, num_channels // 2))
+        net.add_module('transition_block_%d' %
+                       i, transition_block(num_channels, num_channels // 2))
         num_channels = num_channels // 2
 
 net.add_module('BN', nn.BatchNorm2d(num_channels))
 net.add_module('relu', nn.ReLU())
 net.add_module('global_avg_pool', GlobalAvgPool2d())
-net.add_module('fc', nn.Sequential(FlattenLayer(), nn.Linear(num_channels, 10)))
+net.add_module('fc', nn.Sequential(
+    FlattenLayer(), nn.Linear(num_channels, 10)))
 
-#检查网络
+# 检查网络
 X = torch.rand((1, 1, 96, 96))
 for name, layer in net.named_children():
     X = layer(X)
@@ -186,10 +208,12 @@ global_avg_pool output shape:    torch.Size([1, 248, 1, 1])
 fc output shape:         torch.Size([1, 10])
 '''
 
-#获取数据并训练
+# 获取数据并训练
 batch_size = 256
-train_iter, test_iter = load_data_fashion_mnist_toImageNet(batch_size, resize=96)
+train_iter, test_iter = load_data_fashion_mnist_toImageNet(
+    batch_size, resize=96)
 
 lr, num_epochs = 0.001, 5
 optimizer = torch.optim.Adam(net.parameters(), lr=lr)
-train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epochs)
+train_ch5(net, train_iter, test_iter, batch_size,
+          optimizer, device, num_epochs)

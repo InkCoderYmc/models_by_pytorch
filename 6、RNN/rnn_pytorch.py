@@ -9,6 +9,7 @@ import zipfile
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+
 def load_data_jay_lyrics():
     """加载周杰伦歌词数据集"""
     with zipfile.ZipFile('../Datasets/jaychou_lyrics.txt.zip') as zin:
@@ -22,16 +23,21 @@ def load_data_jay_lyrics():
     corpus_indices = [char_to_idx[char] for char in corpus_chars]
     return corpus_indices, char_to_idx, idx_to_char, vocab_size
 
-#为了将词表示称向量输入到神经网络，简单办法是使用one-hot向量
+# 为了将词表示称向量输入到神经网络，简单办法是使用one-hot向量
+
+
 def one_hot(x, n_class, dtype=torch.float32):
     x = x.long()
     res = torch.zeros(x.shape[0], n_class, dtype=dtype, device=x.device)
     res.scatter_(1, x.view(-1, 1), 1)
     return res
 
-#小批量转换
+# 小批量转换
+
+
 def to_onehot(X, n_class):
     return [one_hot(X[:, i], n_class) for i in range(X.shape[1])]
+
 
 def grad_clipping(params, theta, device):
     norm = torch.tensor([0.0], device=device)
@@ -42,14 +48,17 @@ def grad_clipping(params, theta, device):
         for param in params:
             param.grad.data *= (theta / norm)
 
+
 def data_iter_consecutive(corpus_indices, batch_size, num_steps, device=None):
     if device is None:
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    corpus_indices = torch.tensor(corpus_indices, dtype=torch.float32, device=device)
+    corpus_indices = torch.tensor(
+        corpus_indices, dtype=torch.float32, device=device)
     data_len = len(corpus_indices)
-    batch_len = data_len //batch_size
-    indices = corpus_indices[0: batch_size*batch_len].view(batch_size, batch_len)
+    batch_len = data_len // batch_size
+    indices = corpus_indices[0: batch_size *
+                             batch_len].view(batch_size, batch_len)
     epoch_size = (batch_len - 1) // num_steps
     for i in range(epoch_size):
         i = i * num_steps
@@ -57,13 +66,14 @@ def data_iter_consecutive(corpus_indices, batch_size, num_steps, device=None):
         Y = indices[:, i + 1: i + num_steps + 1]
         yield X, Y
 
+
 (corpus_indices, char_to_idx, idx_to_char, vocab_size) = load_data_jay_lyrics()
 
-#使用nn模块中的RNN函数实现
+# 使用nn模块中的RNN函数实现
 num_hiddens = 256
 rnn_layer = nn.RNN(input_size=vocab_size, hidden_size=num_hiddens)
 
-#网络测试
+# 网络测试
 num_steps = 35
 batch_size = 2
 state = None
@@ -74,25 +84,30 @@ Y, state_new = rnn_layer(X, state)
 torch.Size([35, 2, 256]) 1 torch.Size([2, 256])
 '''
 
-#定义完整的循环神经网络，先将输入数据使用one-hot向量表示后输入到rnn_layer中，再使用全连接输出层得到输出
+# 定义完整的循环神经网络，先将输入数据使用one-hot向量表示后输入到rnn_layer中，再使用全连接输出层得到输出
+
+
 class RNNModel(nn.Module):
     def __init__(self, rnn_layer, vocab_size):
         super(RNNModel, self).__init__()
         self.rnn = rnn_layer
-        self.hidden_size = rnn_layer.hidden_size * (2 if rnn_layer.bidirectional else 1)
+        self.hidden_size = rnn_layer.hidden_size * \
+            (2 if rnn_layer.bidirectional else 1)
         self.vocab_size = vocab_size
         self.dense = nn.Linear(self.hidden_size, vocab_size)
         self.state = None
 
     def forward(self, inputs, state):
-        #获取one-hot向量表示
+        # 获取one-hot向量表示
         X = to_onehot(inputs, self.vocab_size)
         Y, self.state = self.rnn(torch.stack(X), state)
-        #全连接层改变Y的形状
+        # 全连接层改变Y的形状
         output = self.dense(Y.view(-1, Y.shape[-1]))
         return output, self.state
 
-#预测函数
+# 预测函数
+
+
 def predict_rnn_pytorch(prefix, num_chars, model, vocab_size, device, idx_to_char, char_to_idx):
     state = None
     output = [char_to_idx[prefix[0]]]
@@ -111,20 +126,24 @@ def predict_rnn_pytorch(prefix, num_chars, model, vocab_size, device, idx_to_cha
             output.append(int(Y.argmax(dim=1).item()))
     return ''.join([idx_to_char[i] for i in output])
 
-model = RNNModel(rnn_layer, vocab_size).to(device)
-print(predict_rnn_pytorch('分开', 10, model, vocab_size, device, idx_to_char, char_to_idx))
 
-def train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device, 
-                        corpus_indices, idx_to_char, char_to_idx, 
-                        num_epochs, num_steps, lr, clipping_theta, 
-                        batch_size, pred_period, pred_len, prefixes):
+model = RNNModel(rnn_layer, vocab_size).to(device)
+print(predict_rnn_pytorch('分开', 10, model,
+                          vocab_size, device, idx_to_char, char_to_idx))
+
+
+def train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device,
+                                  corpus_indices, idx_to_char, char_to_idx,
+                                  num_epochs, num_steps, lr, clipping_theta,
+                                  batch_size, pred_period, pred_len, prefixes):
     loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     model.to(device)
     state = None
     for epoch in range(num_epochs):
         l_sum, n, start = 0.0, 0, time.time()
-        data_iter = data_iter_consecutive(corpus_indices, batch_size, num_steps, device)
+        data_iter = data_iter_consecutive(
+            corpus_indices, batch_size, num_steps, device)
 
         for X, Y in data_iter:
             if state is not None:
@@ -149,15 +168,18 @@ def train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device,
             perplexity = math.exp(l_sum / n)
         except OverflowError:
             perplexity = float('inf')
-        
-        if (epoch + 1) % pred_period ==0:
-            print('epoch %d, perplexity %f, time %.2f sec' % (epoch + 1, perplexity, time.time() - start))
+
+        if (epoch + 1) % pred_period == 0:
+            print('epoch %d, perplexity %f, time %.2f sec' %
+                  (epoch + 1, perplexity, time.time() - start))
             for prefix in prefixes:
-                print(' -', predict_rnn_pytorch(prefix, pred_len, model, vocab_size, device, idx_to_char, char_to_idx))
+                print(' -', predict_rnn_pytorch(prefix, pred_len, model,
+                                                vocab_size, device, idx_to_char, char_to_idx))
+
 
 num_epochs, batch_size, lr, clipping_theta = 250, 32, 1e-3, 1e-2
 pred_period, pred_len, prefixes = 50, 50, ['分开', '不分开']
 train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device,
-                            corpus_indices, idx_to_char, char_to_idx,
-                            num_epochs, num_steps, lr, clipping_theta,
-                            batch_size, pred_period, pred_len, prefixes)
+                              corpus_indices, idx_to_char, char_to_idx,
+                              num_epochs, num_steps, lr, clipping_theta,
+                              batch_size, pred_period, pred_len, prefixes)

@@ -1,4 +1,4 @@
-#NiN，串联多个由卷积层和全连接层构成的小网络来构建深层网络
+# NiN，串联多个由卷积层和全连接层构成的小网络来构建深层网络
 import time
 import torch
 from torch import nn, optim
@@ -9,11 +9,14 @@ import sys
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+
 class FlattenLayer(torch.nn.Module):
     def __init__(self):
         super(FlattenLayer, self).__init__()
-    def forward(self, x): # x shape: (batch, *, *, ...)
+
+    def forward(self, x):  # x shape: (batch, *, *, ...)
         return x.view(x.shape[0], -1)
+
 
 def load_data_fashion_mnist_toImageNet(batch_size, resize=None):
     trans = []
@@ -24,16 +27,21 @@ def load_data_fashion_mnist_toImageNet(batch_size, resize=None):
     trans.append(torchvision.transforms.ToTensor())
     transform = torchvision.transforms.Compose(trans)
 
-    mnist_train = torchvision.datasets.FashionMNIST(root='../Datasets/FashionMNIST', train=True, download=True, transform=transform)
-    mnist_test = torchvision.datasets.FashionMNIST(root='../Datasets/FashionMNIST', train=False, download=True, transform=transform)
+    mnist_train = torchvision.datasets.FashionMNIST(
+        root='../Datasets/FashionMNIST', train=True, download=True, transform=transform)
+    mnist_test = torchvision.datasets.FashionMNIST(
+        root='../Datasets/FashionMNIST', train=False, download=True, transform=transform)
 
     if sys.platform.startswith('win'):
         num_workers = 0
     else:
         num_workers = 4
-    train_iter = torch.utils.data.DataLoader(mnist_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
-    test_iter = torch.utils.data.DataLoader(mnist_test, batch_size=batch_size, shuffle=False, num_workers=num_workers)
+    train_iter = torch.utils.data.DataLoader(
+        mnist_train, batch_size=batch_size, shuffle=True, num_workers=num_workers)
+    test_iter = torch.utils.data.DataLoader(
+        mnist_test, batch_size=batch_size, shuffle=False, num_workers=num_workers)
     return train_iter, test_iter
+
 
 def evaluate_accuracy(data_iter, net, device=None):
     if device is None and isinstance(net, torch.nn.Module):
@@ -43,17 +51,20 @@ def evaluate_accuracy(data_iter, net, device=None):
     with torch.no_grad():
         for X, y in data_iter:
             if isinstance(net, torch.nn.Module):
-                net.eval() # 评估模式, 这会关闭dropout
-                acc_sum += (net(X.to(device)).argmax(dim=1) == y.to(device)).float().sum().cpu().item()
-                net.train() # 改回训练模式
-            else: # 自定义的模型, 3.13节之后不会用到, 不考虑GPU
-                if('is_training' in net.__code__.co_varnames): # 如果有is_training这个参数
+                net.eval()  # 评估模式, 这会关闭dropout
+                acc_sum += (net(X.to(device)).argmax(dim=1) ==
+                            y.to(device)).float().sum().cpu().item()
+                net.train()  # 改回训练模式
+            else:  # 自定义的模型, 3.13节之后不会用到, 不考虑GPU
+                if('is_training' in net.__code__.co_varnames):  # 如果有is_training这个参数
                     # 将is_training设置成False
-                    acc_sum += (net(X, is_training=False).argmax(dim=1) == y).float().sum().item() 
+                    acc_sum += (net(X, is_training=False).argmax(dim=1)
+                                == y).float().sum().item()
                 else:
-                    acc_sum += (net(X).argmax(dim=1) == y).float().sum().item() 
+                    acc_sum += (net(X).argmax(dim=1) == y).float().sum().item()
             n += y.shape[0]
     return acc_sum / n
+
 
 def train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epochs):
     net = net.to(device)
@@ -89,13 +100,16 @@ def nin_block(in_channels, out_channels, kernel_size, stride, padding):
     )
     return blk
 
-#全局平均池化层
+# 全局平均池化层
+
+
 class GlobalAvgPool2d(nn.Module):
     def __init__(self):
         super(GlobalAvgPool2d, self).__init__()
 
     def forward(self, x):
         return F.avg_pool2d(x, kernel_size=x.size()[2:])
+
 
 net = nn.Sequential(
     nin_block(1, 96, kernel_size=11, stride=4, padding=0),
@@ -111,7 +125,7 @@ net = nn.Sequential(
 )
 
 X = torch.rand(1, 1, 224, 224)
-for name, blk in net.named_children(): 
+for name, blk in net.named_children():
     X = blk(X)
     #print(name, 'output shape: ', X.shape)
 
@@ -129,8 +143,10 @@ for name, blk in net.named_children():
 '''
 
 batch_size = 128
-train_iter, test_iter = load_data_fashion_mnist_toImageNet(batch_size, resize=224)
+train_iter, test_iter = load_data_fashion_mnist_toImageNet(
+    batch_size, resize=224)
 
 lr, num_epochs = 0.002, 5
 optimizer = torch.optim.Adam(net.parameters(), lr=lr)
-train_ch5(net, train_iter, test_iter, batch_size, optimizer, device, num_epochs)
+train_ch5(net, train_iter, test_iter, batch_size,
+          optimizer, device, num_epochs)

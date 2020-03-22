@@ -9,11 +9,12 @@ import math
 
 device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
+
 def sgd(params, lr, batch_size):
     # 为了和原书保持一致，这里除以了batch_size，但是应该是不用除的，因为一般用PyTorch计算loss时就默认已经
     # 沿batch维求了平均了。
     for param in params:
-        param.data -= lr * param.grad / batch_size # 注意这里更改param时用的param.data
+        param.data -= lr * param.grad / batch_size  # 注意这里更改param时用的param.data
 
 
 def load_data_jay_lyrics():
@@ -29,15 +30,19 @@ def load_data_jay_lyrics():
     corpus_indices = [char_to_idx[char] for char in corpus_chars]
     return corpus_indices, char_to_idx, idx_to_char, vocab_size
 
-#相邻采样
+# 相邻采样
+
+
 def data_iter_consecutive(corpus_indices, batch_size, num_steps, device=None):
     if device is None:
         device = torch.device('cuda:0' if torch.cuda.is_available() else 'cpu')
 
-    corpus_indices = torch.tensor(corpus_indices, dtype=torch.float32, device=device)
+    corpus_indices = torch.tensor(
+        corpus_indices, dtype=torch.float32, device=device)
     data_len = len(corpus_indices)
-    batch_len = data_len //batch_size
-    indices = corpus_indices[0: batch_size*batch_len].view(batch_size, batch_len)
+    batch_len = data_len // batch_size
+    indices = corpus_indices[0: batch_size *
+                             batch_len].view(batch_size, batch_len)
     epoch_size = (batch_len - 1) // num_steps
     for i in range(epoch_size):
         i = i * num_steps
@@ -45,22 +50,27 @@ def data_iter_consecutive(corpus_indices, batch_size, num_steps, device=None):
         Y = indices[:, i + 1: i + num_steps + 1]
         yield X, Y
 
-#为了将词表示称向量输入到神经网络，简单办法是使用one-hot向量
+# 为了将词表示称向量输入到神经网络，简单办法是使用one-hot向量
+
+
 def one_hot(x, n_class, dtype=torch.float32):
     x = x.long()
     res = torch.zeros(x.shape[0], n_class, dtype=dtype, device=x.device)
     res.scatter_(1, x.view(-1, 1), 1)
     return res
 
+
 x = torch.tensor([0, 2])
 #print(one_hot(x, vocab_size))
 
-#小批量转换
+# 小批量转换
+
+
 def to_onehot(X, n_class):
     return [one_hot(X[:, i], n_class) for i in range(X.shape[1])]
 
 
-#裁剪梯度，防止出现梯度爆炸
+# 裁剪梯度，防止出现梯度爆炸
 def grad_clipping(params, theta, device):
     norm = torch.tensor([0.0], device=device)
     for param in params:
@@ -70,22 +80,25 @@ def grad_clipping(params, theta, device):
         for param in params:
             param.grad.data *= (theta / norm)
 
+
 class RNNModel(nn.Module):
     def __init__(self, rnn_layer, vocab_size):
         super(RNNModel, self).__init__()
         self.rnn = rnn_layer
-        self.hidden_size = rnn_layer.hidden_size * (2 if rnn_layer.bidirectional else 1)
+        self.hidden_size = rnn_layer.hidden_size * \
+            (2 if rnn_layer.bidirectional else 1)
         self.vocab_size = vocab_size
         self.dense = nn.Linear(self.hidden_size, vocab_size)
         self.state = None
 
     def forward(self, inputs, state):
-        #获取one-hot向量表示
+        # 获取one-hot向量表示
         X = to_onehot(inputs, self.vocab_size)
         Y, self.state = self.rnn(torch.stack(X), state)
-        #全连接层改变Y的形状
+        # 全连接层改变Y的形状
         output = self.dense(Y.view(-1, Y.shape[-1]))
         return output, self.state
+
 
 def predict_rnn_pytorch(prefix, num_chars, model, vocab_size, device, idx_to_char, char_to_idx):
     state = None
@@ -105,17 +118,19 @@ def predict_rnn_pytorch(prefix, num_chars, model, vocab_size, device, idx_to_cha
             output.append(int(Y.argmax(dim=1).item()))
     return ''.join([idx_to_char[i] for i in output])
 
-def train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device, 
-                        corpus_indices, idx_to_char, char_to_idx, 
-                        num_epochs, num_steps, lr, clipping_theta, 
-                        batch_size, pred_period, pred_len, prefixes):
+
+def train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device,
+                                  corpus_indices, idx_to_char, char_to_idx,
+                                  num_epochs, num_steps, lr, clipping_theta,
+                                  batch_size, pred_period, pred_len, prefixes):
     loss = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     model.to(device)
     state = None
     for epoch in range(num_epochs):
         l_sum, n, start = 0.0, 0, time.time()
-        data_iter = data_iter_consecutive(corpus_indices, batch_size, num_steps, device)
+        data_iter = data_iter_consecutive(
+            corpus_indices, batch_size, num_steps, device)
 
         for X, Y in data_iter:
             if state is not None:
@@ -140,27 +155,29 @@ def train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device,
             perplexity = math.exp(l_sum / n)
         except OverflowError:
             perplexity = float('inf')
-        
-        if (epoch + 1) % pred_period ==0:
-            print('epoch %d, perplexity %f, time %.2f sec' % (epoch + 1, perplexity, time.time() - start))
+
+        if (epoch + 1) % pred_period == 0:
+            print('epoch %d, perplexity %f, time %.2f sec' %
+                  (epoch + 1, perplexity, time.time() - start))
             for prefix in prefixes:
-                print(' -', predict_rnn_pytorch(prefix, pred_len, model, vocab_size, device, idx_to_char, char_to_idx))
+                print(' -', predict_rnn_pytorch(prefix, pred_len, model,
+                                                vocab_size, device, idx_to_char, char_to_idx))
 
 
 (corpus_indices, char_to_idx, idx_to_char, vocab_size) = load_data_jay_lyrics()
 
-#初始化模型参数
+# 初始化模型参数
 num_inputs, num_hiddens, num_outputs = vocab_size, 256, vocab_size
 print('will use', device)
 
-#训练并创作
+# 训练并创作
 num_epochs, num_steps, batch_size, lr, clipping_theta = 160, 35, 32, 1e-2, 1e-2
 pred_period, pred_len, prefixes = 40, 50, ['分开', '不分开']
 
 lstm_layer = nn.LSTM(input_size=vocab_size, hidden_size=num_hiddens)
 model = RNNModel(lstm_layer, vocab_size)
 
-train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device, 
-                            corpus_indices, idx_to_char, char_to_idx, 
-                            num_epochs, num_steps, lr, clipping_theta, 
-                            batch_size, pred_period, pred_len, prefixes)
+train_and_predict_rnn_pytorch(model, num_hiddens, vocab_size, device,
+                              corpus_indices, idx_to_char, char_to_idx,
+                              num_epochs, num_steps, lr, clipping_theta,
+                              batch_size, pred_period, pred_len, prefixes)
